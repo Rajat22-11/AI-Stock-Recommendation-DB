@@ -1,0 +1,21 @@
+# Secrets (design D6 / delivery-pipeline: secrets never in the repository)
+.env
+.env.*
+!.env.example
+
+# Supabase CLI local state
+supabase/.temp/
+supabase/.branches/
+
+# Workflow by-products
+*.gpg
+drift.sql
+schema-drift.*
+config-drift.diff
+backup/
+
+# Node
+node_modules/
+
+#Claude
+.claude/settings.local.json

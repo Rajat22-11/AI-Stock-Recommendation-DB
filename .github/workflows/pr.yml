@@ -1,0 +1,56 @@
+name: PR checks
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  SUPABASE_CLI_VERSION: 2.120.0
+  OPENSPEC_VERSION: 1.14.1
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    env:
+      # Secrets are absent on PRs from forks; the prod dry-run is skipped then.
+      HAS_PROD_SECRETS: ${{ secrets.SUPABASE_DB_URL != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate OpenSpec changes and specs
+        run: npx --yes "@fission-ai/openspec@${OPENSPEC_VERSION}" validate --all --strict
+
+      - name: Guard migration history
+        run: bash scripts/guard-migrations.sh "origin/${{ github.base_ref }}"
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+
+      - name: Build database from all migrations
+        run: supabase db start
+
+      - name: Run database tests (pgTAP)
+        run: supabase test db
+
+      - name: Lint public schema
+        run: supabase db lint --local --schema public --level error --fail-on error
+
+      - name: Show migrations that would be applied to production
+        if: env.HAS_PROD_SECRETS == 'true'
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: supabase db push --db-url "$SUPABASE_DB_URL" --dry-run

@@ -1,0 +1,16 @@
+{
+  "name": "breakout-tracker-db",
+  "private": true,
+  "description": "Breakout Tracker: Supabase schema, tests and CI for the paper-trading audit trail",
+  "scripts": {
+    "db:start": "supabase db start",
+    "db:rebuild": "supabase stop --no-backup && supabase db start",
+    "db:test": "supabase test db",
+    "db:lint": "supabase db lint --local --schema public --level error --fail-on error",
+    "specs:validate": "openspec validate --all --strict"
+  },
+  "devDependencies": {
+    "@fission-ai/openspec": "1.14.1",
+    "supabase": "2.120.0"
+  }
+}

@@ -1,0 +1,89 @@
+name: Nightly drift check
+
+on:
+  schedule:
+    - cron: "30 20 * * *"   # 02:00 IST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: drift
+  cancel-in-progress: false
+
+env:
+  SUPABASE_CLI_VERSION: 2.120.0
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+
+      - name: Build database from repo migrations
+        run: supabase db start
+
+      - name: Schema diff (public only)
+        id: schema
+        run: |
+          # Off a TTY the CLI prints JSON: {"diff":"<SQL turning the repo schema into prod's>", ...}.
+          # An empty .diff means no drift.
+          supabase db diff --db-url "$SUPABASE_DB_URL" --schema public > schema-drift.json
+          jq -er '.diff' schema-drift.json > schema-drift.sql
+          if [ -n "$(tr -d '[:space:]' < schema-drift.sql)" ]; then
+            echo "drift=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "drift=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Policy config diff
+        id: config
+        run: |
+          set +e
+          bash scripts/config-drift.sh > config-drift.diff
+          rc=$?
+          set -e
+          if [ "$rc" -eq 2 ]; then echo "::error::config drift check could not connect"; exit 2; fi
+          if [ "$rc" -eq 1 ]; then echo "drift=true" >> "$GITHUB_OUTPUT"; else echo "drift=false" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Open or update the drift issue
+        if: steps.schema.outputs.drift == 'true' || steps.config.outputs.drift == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "Production differs from the repo as of $(date -u +'%Y-%m-%d %H:%M UTC') (run ${{ github.run_id }})."
+            echo
+            echo "Schema/function/view/config changes must arrive through a migration PR. Either capture this"
+            echo "change in a new migration, or revert it in production."
+            echo
+            echo "### Schema (public)"
+            echo '```sql'
+            if [ -s schema-drift.sql ]; then head -c 50000 schema-drift.sql; else echo "-- no differences"; fi
+            echo '```'
+            echo "### Policy config"
+            echo '```diff'
+            if [ -s config-drift.diff ]; then head -c 50000 config-drift.diff; else echo "no differences"; fi
+            echo '```'
+          } > issue.md
+          gh label create drift --color B60205 --description "Prod differs from repo" --force
+          n="$(gh issue list --label drift --state open --json number --jq '.[0].number')"
+          if [ -n "$n" ]; then
+            gh issue edit "$n" --body-file issue.md
+            echo "updated issue #$n"
+          else
+            gh issue create --title "Schema drift detected in production" --label drift --body-file issue.md
+          fi
+          exit 1
+
+      - name: No drift
+        if: steps.schema.outputs.drift == 'false' && steps.config.outputs.drift == 'false'
+        run: echo "production matches the repo"

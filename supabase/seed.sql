@@ -1,0 +1,2 @@
+-- Intentionally empty. Production config ships only as migrations (design D4);
+-- tests load their own fixtures from supabase/tests/fixtures/.

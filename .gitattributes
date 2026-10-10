@@ -1,0 +1,11 @@
+# Force LF everywhere: migration files must stay byte-identical to the SQL recorded in
+# prod's schema_migrations, and shell scripts must run on the Linux CI runners.
+* text=auto eol=lf
+*.sql text eol=lf
+*.sh  text eol=lf
+*.yml text eol=lf
+
+# Byte-exact copies of production objects. process_ledger's body has CRLF line endings in prod;
+# normalising them would make the repo differ from prod. Never let git touch these bytes.
+supabase/migrations/20261010123000_baseline_reconcile_live_drift.sql -text
+supabase/snapshots/prod_*.sql -text

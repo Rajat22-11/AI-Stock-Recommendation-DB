@@ -1,0 +1,42 @@
+name: Weekly encrypted backup
+
+on:
+  schedule:
+    - cron: "0 21 * * 6"   # Sunday 02:30 IST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  SUPABASE_CLI_VERSION: 2.120.0
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+
+      - name: Dump public data and encrypt
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          if [ -z "$BACKUP_PASSPHRASE" ]; then echo "::error::BACKUP_PASSPHRASE secret is not set"; exit 1; fi
+          umask 077
+          mkdir -p backup
+          stamp="$(date -u +%Y-%m-%d)"
+          bash scripts/backup.sh "backup/tracker-data-${stamp}.sql.gpg"
+          ls -l backup
+
+      # Public repo: artifacts are downloadable, but the file is AES-256 encrypted.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tracker-backup-${{ github.run_id }}
+          path: backup/*.gpg
+          retention-days: 90
+          if-no-files-found: error
