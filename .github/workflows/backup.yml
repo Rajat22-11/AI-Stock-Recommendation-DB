@@ -26,7 +26,10 @@ jobs:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
         run: |
-          if [ -z "$BACKUP_PASSPHRASE" ]; then echo "::error::BACKUP_PASSPHRASE secret is not set"; exit 1; fi
+          if [ -z "$BACKUP_PASSPHRASE" ]; then
+            echo "::warning::BACKUP_PASSPHRASE secret is not set; skipping encrypted backup"
+            exit 0
+          fi
           umask 077
           mkdir -p backup
           stamp="$(date -u +%Y-%m-%d)"
@@ -35,6 +38,7 @@ jobs:
 
       # Public repo: artifacts are downloadable, but the file is AES-256 encrypted.
       - uses: actions/upload-artifact@v4
+        if: ${{ hashFiles('backup/*.gpg') != '' }}
         with:
           name: tracker-backup-${{ github.run_id }}
           path: backup/*.gpg
